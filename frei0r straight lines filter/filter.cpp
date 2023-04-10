@@ -40,8 +40,8 @@ private:
 		void UpdateSquaresBrightness(const uint32_t* in);
 		void GenerateExtremePoints();
 		bool IsLineFitsBrightness(int32_t x0, int32_t y0, int32_t x1, int32_t y1) const;
-		void DrawLine(int32_t x0, int32_t y0, int32_t x1, int32_t y1, uint32_t* out) const;
-		void plot(int32_t x, int32_t y, float brightess, uint32_t* out) const;
+		void DrawLine(int32_t x0, int32_t y0, int32_t x1, int32_t y1, uint32_t* out, const uint32_t* in) const;
+		void plot(int32_t x, int32_t y, float brightess, uint32_t* out, const uint32_t* in) const;
 
 		//Целая часть параметра m_side_size
 		const uint32_t m_kRoundSideSize;
@@ -161,7 +161,7 @@ void LinesFilter::FrameHandler::FrameProcessing(uint32_t* out, const uint32_t* i
 		{
 			if (IsLineFitsBrightness(m_ExtremePoints[VideoSide::UP][i], 0, m_ExtremePoints[VideoSide::DOWN][j], m_kHeight-1 - m_kHeight % m_kRoundSideSize))
 			{
-				DrawLine(m_ExtremePoints[VideoSide::UP][i], 0, m_ExtremePoints[VideoSide::DOWN][j], m_kHeight - 1 - m_kHeight%m_kRoundSideSize, out);
+				DrawLine(m_ExtremePoints[VideoSide::UP][i], 0, m_ExtremePoints[VideoSide::DOWN][j], m_kHeight - 1 - m_kHeight%m_kRoundSideSize, out, in);
 			}
 		}
 	}
@@ -171,7 +171,7 @@ void LinesFilter::FrameHandler::FrameProcessing(uint32_t* out, const uint32_t* i
 		{
 			if (IsLineFitsBrightness(0, m_ExtremePoints[VideoSide::LEFT][i], m_kWidth - 1 - m_kWidth % m_kRoundSideSize, m_ExtremePoints[VideoSide::RIGHT][j]))
 			{
-				DrawLine(0, m_ExtremePoints[VideoSide::LEFT][i], m_kWidth - 1 - m_kWidth % m_kRoundSideSize, m_ExtremePoints[VideoSide::RIGHT][j], out);
+				DrawLine(0, m_ExtremePoints[VideoSide::LEFT][i], m_kWidth - 1 - m_kWidth % m_kRoundSideSize, m_ExtremePoints[VideoSide::RIGHT][j], out, in);
 			}
 		}
 	}
@@ -400,7 +400,7 @@ bool LinesFilter::FrameHandler::IsLineFitsBrightness(int32_t x0, int32_t y0, int
 	return (avg_line_brightness <= m_max_line_brightness);
 }
 
-void LinesFilter::FrameHandler::DrawLine(int32_t x0, int32_t y0, int32_t x1, int32_t y1, uint32_t* out) const
+void LinesFilter::FrameHandler::DrawLine(int32_t x0, int32_t y0, int32_t x1, int32_t y1, uint32_t* out, const uint32_t* in) const
 {
 	 //https://en.wikipedia.org/wiki/Xiaolin_Wu%27s_line_algorithm
 
@@ -432,12 +432,12 @@ void LinesFilter::FrameHandler::DrawLine(int32_t x0, int32_t y0, int32_t x1, int
 		xpx11 = int(xend);
 		const int ypx11 = ipart(yend);
 		if (steep) {
-			plot(ypx11, xpx11, rfpart(yend) * xgap, out);
-			plot(ypx11 + 1, xpx11, fpart(yend) * xgap, out);
+			plot(ypx11, xpx11, rfpart(yend) * xgap, out, in);
+			plot(ypx11 + 1, xpx11, fpart(yend) * xgap, out, in);
 		}
 		else {
-			plot(xpx11, ypx11, rfpart(yend) * xgap, out);
-			plot(xpx11, ypx11 + 1, fpart(yend) * xgap, out);
+			plot(xpx11, ypx11, rfpart(yend) * xgap, out, in);
+			plot(xpx11, ypx11 + 1, fpart(yend) * xgap, out, in);
 		}
 		intery = yend + gradient;
 	}
@@ -450,34 +450,35 @@ void LinesFilter::FrameHandler::DrawLine(int32_t x0, int32_t y0, int32_t x1, int
 		xpx12 = int(xend);
 		const int ypx12 = ipart(yend);
 		if (steep) {
-			plot(ypx12, xpx12, rfpart(yend) * xgap, out);
-			plot(ypx12 + 1, xpx12, fpart(yend) * xgap, out);
+			plot(ypx12, xpx12, rfpart(yend) * xgap, out, in);
+			plot(ypx12 + 1, xpx12, fpart(yend) * xgap, out, in);
 		}
 		else {
-			plot(xpx12, ypx12, rfpart(yend) * xgap, out);
-			plot(xpx12, ypx12 + 1, fpart(yend) * xgap, out);
+			plot(xpx12, ypx12, rfpart(yend) * xgap, out, in);
+			plot(xpx12, ypx12 + 1, fpart(yend) * xgap, out, in);
 		}
 	}
 
 	if (steep) {
 		for (int x = xpx11 + 1; x < xpx12; x++) {
-			plot(ipart(intery), x, rfpart(intery), out);
-			plot(ipart(intery) + 1, x, fpart(intery), out);
+			plot(ipart(intery), x, rfpart(intery), out, in);
+			plot(ipart(intery) + 1, x, fpart(intery), out, in);
 			intery += gradient;
 		}
 	}
 	else {
 		for (int x = xpx11 + 1; x < xpx12; x++) {
-			plot(x, ipart(intery), rfpart(intery), out);
-			plot(x, ipart(intery) + 1, fpart(intery), out);
+			plot(x, ipart(intery), rfpart(intery), out, in);
+			plot(x, ipart(intery) + 1, fpart(intery), out, in);
 			intery += gradient;
 		}
 	}
 }
 
 
-void LinesFilter::FrameHandler::plot(int32_t x, int32_t y, float brightness, uint32_t* out) const
+void LinesFilter::FrameHandler::plot(int32_t x, int32_t y, float brightness, uint32_t* out, const uint32_t* in) const
 {
+	if (*(reinterpret_cast<const uint8_t*>(in + x + m_kWidth * y) + 0) > m_max_line_brightness) return;
 	*(reinterpret_cast<uint8_t*>(out + x + m_kWidth * y) + 0) *= (1. - brightness);
 	*(reinterpret_cast<uint8_t*>(out + x + m_kWidth * y) + 1) *= (1. - brightness);
 	*(reinterpret_cast<uint8_t*>(out + x + m_kWidth * y) + 2) *= (1. - brightness);

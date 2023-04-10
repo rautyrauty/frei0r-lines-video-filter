@@ -76,7 +76,7 @@ private:
 		class ExtremePoints 
 		{
 		public:
-			uint32_t*& operator[](VideoSide s) { return arr[static_cast<int>(VideoSide::UP)]; }
+			uint32_t*& operator[](VideoSide s) { return arr[static_cast<int>(s)]; }
 		private:
 			uint32_t* arr[4];
 		} m_ExtremePoints;

@@ -5,8 +5,6 @@ VisualStudioVersion = 17.5.33502.453
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "frei0r straight lines filter", "frei0r straight lines filter\frei0r straight lines filter.vcxproj", "{BD8CFBA2-684C-4A4D-807C-EA9430F829DE}"
 EndProject
-Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "exp", "exp\exp.vcxproj", "{F6166AD3-4A05-44CA-8D80-E993DBA996C2}"
-EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|x64 = Debug|x64
@@ -23,14 +21,6 @@ Global
 		{BD8CFBA2-684C-4A4D-807C-EA9430F829DE}.Release|x64.Build.0 = Release|x64
 		{BD8CFBA2-684C-4A4D-807C-EA9430F829DE}.Release|x86.ActiveCfg = Release|Win32
 		{BD8CFBA2-684C-4A4D-807C-EA9430F829DE}.Release|x86.Build.0 = Release|Win32
-		{F6166AD3-4A05-44CA-8D80-E993DBA996C2}.Debug|x64.ActiveCfg = Debug|x64
-		{F6166AD3-4A05-44CA-8D80-E993DBA996C2}.Debug|x64.Build.0 = Debug|x64
-		{F6166AD3-4A05-44CA-8D80-E993DBA996C2}.Debug|x86.ActiveCfg = Debug|Win32
-		{F6166AD3-4A05-44CA-8D80-E993DBA996C2}.Debug|x86.Build.0 = Debug|Win32
-		{F6166AD3-4A05-44CA-8D80-E993DBA996C2}.Release|x64.ActiveCfg = Release|x64
-		{F6166AD3-4A05-44CA-8D80-E993DBA996C2}.Release|x64.Build.0 = Release|x64
-		{F6166AD3-4A05-44CA-8D80-E993DBA996C2}.Release|x86.ActiveCfg = Release|Win32
-		{F6166AD3-4A05-44CA-8D80-E993DBA996C2}.Release|x86.Build.0 = Release|Win32
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

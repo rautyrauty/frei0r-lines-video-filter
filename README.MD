@@ -3,7 +3,5 @@
 Там же найдёте инструкцию по использованию. Файл dll запихнуть в FREI0R_PATH
 ### freeman
 ![](freeman0.gif)
-![](freeman0before.gif)
 ### bad apple
 ![](badapple.gif)
-![](badapplebefore.gif)

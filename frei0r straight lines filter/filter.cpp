@@ -1,22 +1,55 @@
-﻿//ffmpeg -loglevel debug -i videoplayback.mp4 -vf "frei0r=FrameHandler" -t 10 of.mp4
+﻿//ffmpeg -loglevel debug -i videoplayback.mp4 -vf "frei0r=straightlines:2000|10" -t 30 lovebff.mp4
 
 #include <frei0r.hpp>
 #include <iostream>
+#include <algorithm>
+#include <vector>
+#include <chrono>
+#include <random>
 
-/* 
- * Каждый кадр будет мысленно поделен на квадратные поля (просто на квадраты) со стороной m_side_size.
- * Это сделано для того, чтобы ускорить и упростить нахождение средней яркости пикселей,
- * попавших под линию. Это значение будет сравниваться с m_max_brightness, решая - отрисовывать
- * данную линию или нет. 
- * Сочувствую тем, кто захочет понять че тут происходит.
- */
+struct Pos 
+{
+	int32_t x;
+	int32_t y;
+};
 
-// Этот класс отвечает только за параметры вводимые пользователем и функцию update 
+class FrameHandler
+{
+public:
+	FrameHandler(const uint32_t width, const uint32_t height, const double num_of_lines, const double sample_size, const bool should_draw_extreme_lines, const bool long_line_mode);
+
+	void FrameProcessing(uint32_t* out, uint32_t* in);
+
+private:
+	void FindEdges(int32_t& x0, int32_t& y0, int32_t& x1, int32_t& y1) const;
+
+	uint32_t GetPixelValue(int32_t x, int32_t y, const uint32_t* in) const;
+	double GetLineValue(int32_t x0, int32_t y0, int32_t x1, int32_t y1,const uint32_t* in) const;
+
+	void UpdatePoints(const uint32_t* in);
+
+	void DrawPixel(int32_t x, int32_t y, float brightess, uint32_t* out, uint32_t* in) const;
+	void DrawLine(int32_t x0, int32_t y0, int32_t x1, int32_t y1, float brightness, uint32_t* out, uint32_t* in) const;
+
+	const uint32_t m_kNumOfLines;
+	const uint32_t m_kSampleSize;
+	const bool m_kShouldDrawExtremePoints;
+	const bool m_kLongLineMode;
+
+	const uint32_t m_kWidth;
+	const uint32_t m_kHeight;
+
+	std::mt19937 rng;
+
+	std::vector<Pos> m_darkest_points;
+	std::vector<std::vector<Pos>> m_extreme_points;
+};
+
+// Этот класс отвечает за параметры, вводимые пользователем, и функцию update 
 class LinesFilter : public frei0r::filter
 {
 public:
 	LinesFilter(unsigned int, unsigned int);
-	~LinesFilter() override;
 
 	// Главная ф-ция отвечающая за обработку кадров 
 	void update(double time, uint32_t* out, const uint32_t* in) override;
@@ -25,382 +58,326 @@ private:
 
 	//параметры:
 
-	double m_side_size;
-
-	//Класс отвечающий почти что за всё
-	class FrameHandler
-	{
-	public:
-		FrameHandler(const uint32_t width, const uint32_t height, const double side_size);
-		~FrameHandler();
-
-		void FrameProcessing(uint32_t* out, const uint32_t* in);
-
-	private:
-		void UpdateSquaresBrightness(const uint32_t* in);
-		void GenerateExtremePoints();
-		bool IsLineFitsBrightness(int32_t x0, int32_t y0, int32_t x1, int32_t y1) const;
-		void DrawLine(int32_t x0, int32_t y0, int32_t x1, int32_t y1, uint32_t* out, const uint32_t* in) const;
-		void plot(int32_t x, int32_t y, float brightess, uint32_t* out, const uint32_t* in) const;
-
-		//Целая часть параметра m_side_size
-		const uint32_t m_kRoundSideSize;
-
-		const uint32_t m_kWidth;
-		const uint32_t m_kHeight;
-
-		//количество квадратов по ширине
-		const uint32_t m_kSquaresWidthCount;
-		//количество квадратов по длине
-		const uint32_t m_kSquaresHeightCount;
-
-		// Двумерный массив размерности m_kSquaresWidthCount+1 * m_kSquaresHeightCount+1 
-		// где хранятся средняя яркость пикселей находящихся в квадратах.
-		//Высчитывается отдельно для каждого кадра в UpdateSquaresBrightness(const uint32_t* in)
-		uint32_t** m_SquaresBrightness;
-
-		//Максимальная средняя яркость пикселей попадающих под линию.
-		//Высчитывается отдельно для каждого кадра в UpdateSquaresBrightness(const uint32_t* in)
-		uint32_t m_max_line_brightness;
-
-		enum class VideoSide
-		{
-			UP    = 0,
-			DOWN  = 1,
-			LEFT  = 2,
-			RIGHT = 3
-		};
-
-		// Обёртка для двумерного массива размерности 4 * (m_kSquaresHeightCount или m_kSquaresWidthCount)
-		// где хранятся крайние точки потенциальных линий. [VideoSide][Номер квадрата сверху-вниз или слева-направо]
-		class ExtremePoints 
-		{
-		public:
-			uint32_t*& operator[](VideoSide s) { return arr[static_cast<int>(s)]; }
-		private:
-			uint32_t* arr[4];
-		} m_ExtremePoints;
-	}*m_frame_handler;
+	double m_num_of_lines;
+	double m_sample_size;
+	bool m_should_draw_extreme_lines;
+	bool m_long_line_mode;
+	
+	std::unique_ptr<FrameHandler> m_frame_handler;
 };
 
 LinesFilter::LinesFilter(unsigned int, unsigned int) :
 	m_frame_handler(nullptr),
 	//Значения по умолчанию:
-	m_side_size(15)
+	m_num_of_lines(1000),
+	m_sample_size(10),
+	m_should_draw_extreme_lines(false),
+	m_long_line_mode(true)
 {
-	register_param(m_side_size, "SideSize",
-		"Side size of square fields(didn't ask). This parameter is responsible for lines density. Min: 30");
+	register_param(m_num_of_lines, "Number of Lines", "Default: 1000");
+	register_param(m_sample_size, "Sample size", "Number of attempts to build a line. Default: 10");
+	register_param(m_should_draw_extreme_lines, "Extreme Line Mode", "Should draw the extreme lines? Default: false");
+	register_param(m_long_line_mode, "Long Line Mode", "Should draw lines to the end of the screen? Default: true");
 
-	//srand(time(0));
-}
-
-LinesFilter::~LinesFilter()
-{
-	delete m_frame_handler;
+	srand(time(0));
 }
 
 void LinesFilter::update(double, uint32_t* out, const uint32_t* in)
 {
 	/*
 	 * Спросите почему я не инициализировал m_frame_handler в конструкторе ?
-	 * Ответ: только здесь мы узнаем значения параметров m_side_size и m_max_brightness.
+	 * Ответ: только здесь мы узнаем значения параметров.
 	 * Это одна из главных причин почему этот класс впринципе существует
 	 */
-	if (not m_frame_handler) m_frame_handler = new FrameHandler(width, height, m_side_size);
+	if (not m_frame_handler) m_frame_handler = std::make_unique<FrameHandler>(width, height, m_num_of_lines, m_sample_size, m_should_draw_extreme_lines, m_long_line_mode);
 
 	std::fill(out, out + size, static_cast<char>(255)); // делаем кадр белым
 
-	m_frame_handler->FrameProcessing(out, in);
+	uint32_t* in_copy = new uint32_t[size];
+	std::copy_n(in, size, in_copy);
+
+	m_frame_handler->FrameProcessing(out, in_copy);
 }
 
-
-LinesFilter::FrameHandler::FrameHandler(const uint32_t width, const uint32_t height, const double side_size) :
-	m_kRoundSideSize(side_size >= 5 ? static_cast<uint32_t>(side_size) : 5),
+FrameHandler::FrameHandler(const uint32_t width, const uint32_t height, const double num_of_lines, const double sample_size, const bool should_draw_extreme_lines, const bool long_line_mode) :
+	m_kNumOfLines(num_of_lines),
+	m_kSampleSize(sample_size),
+	m_kShouldDrawExtremePoints(should_draw_extreme_lines),
+	m_kLongLineMode(long_line_mode),
 	m_kWidth(width),
 	m_kHeight(height),
-	m_kSquaresWidthCount(m_kWidth  / m_kRoundSideSize),
-	m_kSquaresHeightCount(m_kHeight / m_kRoundSideSize),
-	m_max_line_brightness(0)
+	rng(std::chrono::steady_clock::now().time_since_epoch().count())
 {
-	m_SquaresBrightness = new uint32_t * [m_kSquaresWidthCount];
-	for (uint32_t i = 0; i < m_kSquaresWidthCount; i += 1)
-	{
-		m_SquaresBrightness[i] = new uint32_t[m_kSquaresHeightCount];
-	}
-
-	//Можно было бы сделать массив статичным, но мне так больше нравится
-	m_ExtremePoints[VideoSide::UP]    = new uint32_t[m_kSquaresWidthCount];
-	m_ExtremePoints[VideoSide::DOWN]  = new uint32_t[m_kSquaresWidthCount];
-	m_ExtremePoints[VideoSide::LEFT]  = new uint32_t[m_kSquaresHeightCount];
-	m_ExtremePoints[VideoSide::RIGHT] = new uint32_t[m_kSquaresHeightCount];
-}
-
-LinesFilter::FrameHandler::~FrameHandler()
+	m_darkest_points.reserve(m_kWidth * m_kHeight);
+} 
+void FrameHandler::FrameProcessing(uint32_t* out, uint32_t* in)
 {
-	delete[] m_ExtremePoints[VideoSide::UP];
-	delete[] m_ExtremePoints[VideoSide::DOWN];
-	delete[] m_ExtremePoints[VideoSide::LEFT];
-	delete[] m_ExtremePoints[VideoSide::RIGHT];
+	UpdatePoints(in);
 
-	for (uint32_t i = 0; i <= m_kSquaresWidthCount; i += 1)
+	int32_t x0, y0, x1, y1;
+
+	if (m_kShouldDrawExtremePoints)
 	{
-		delete[] m_SquaresBrightness[i];
-	}
-	delete[] m_SquaresBrightness;
-}
-
-void LinesFilter::FrameHandler::FrameProcessing(uint32_t* out, const uint32_t* in)
-{
-	UpdateSquaresBrightness(in);
-
-	GenerateExtremePoints();
-
-	for (uint32_t i = 0; i < m_kSquaresWidthCount ; i += 1)
-	{
-		for (uint32_t j = 0; j < m_kSquaresWidthCount; j += 1)
+		for (int32_t h = 0; h < int(m_extreme_points.size()) - 1; h += 1)
 		{
-			if (IsLineFitsBrightness(m_ExtremePoints[VideoSide::UP][i], 0, m_ExtremePoints[VideoSide::DOWN][j], m_kHeight-1 - m_kHeight % m_kRoundSideSize))
+			for (uint32_t w = 0; ((w < m_extreme_points[h].size()) and (w < m_extreme_points[h + 1].size())); w += 1)
 			{
-				DrawLine(m_ExtremePoints[VideoSide::UP][i], 0, m_ExtremePoints[VideoSide::DOWN][j], m_kHeight - 1 - m_kHeight%m_kRoundSideSize, out, in);
-			}
-		}
-	}
-	for (uint32_t i = 0; i < m_kSquaresHeightCount; i += 1)
-	{
-		for (uint32_t j = 0; j < m_kSquaresHeightCount; j += 1)
-		{
-			if (IsLineFitsBrightness(0, m_ExtremePoints[VideoSide::LEFT][i], m_kWidth - 1 - m_kWidth % m_kRoundSideSize, m_ExtremePoints[VideoSide::RIGHT][j]))
-			{
-				DrawLine(0, m_ExtremePoints[VideoSide::LEFT][i], m_kWidth - 1 - m_kWidth % m_kRoundSideSize, m_ExtremePoints[VideoSide::RIGHT][j], out, in);
-			}
-		}
-	}
+				x0 = m_extreme_points[  h  ][w].x; y0 = m_extreme_points[  h  ][w].y;
+				x1 = m_extreme_points[h + 1][w].x; y1 = m_extreme_points[h + 1][w].y;
 
-	/*for (uint32_t i = 2; i < m_kSquaresWidthCount-2; i += 1)
-	{
-		for (uint32_t j = 2; j < m_kSquaresHeightCount-2; j += 1)
-		{
-			if (IsLineFitsBrightness(m_ExtremePoints[VideoSide::UP][i], 0, 0, m_ExtremePoints[VideoSide::LEFT][j]))
-			{
-				DrawLine(m_ExtremePoints[VideoSide::UP][i], 0, 0, m_ExtremePoints[VideoSide::LEFT][j], out);
-			}
-			if (IsLineFitsBrightness(m_ExtremePoints[VideoSide::UP][i], 0, m_kWidth-1 - m_kWidth % m_kRoundSideSize, m_ExtremePoints[VideoSide::RIGHT][j]))
-			{
-				DrawLine(m_ExtremePoints[VideoSide::UP][i], 0, m_kWidth - 1 - m_kWidth % m_kRoundSideSize, m_ExtremePoints[VideoSide::RIGHT][j], out);
-			}
-			if (IsLineFitsBrightness(m_ExtremePoints[VideoSide::DOWN][i], m_kHeight-1 - m_kHeight % m_kRoundSideSize, 0, m_ExtremePoints[VideoSide::LEFT][j]))
-			{
-				DrawLine(m_ExtremePoints[VideoSide::DOWN][i], m_kHeight - 1 - m_kHeight % m_kRoundSideSize, 0, m_ExtremePoints[VideoSide::LEFT][j], out);
-			}
-			if (IsLineFitsBrightness(m_ExtremePoints[VideoSide::DOWN][i], m_kHeight - 1 - m_kHeight % m_kRoundSideSize, m_kWidth-1 - m_kWidth % m_kRoundSideSize, m_ExtremePoints[VideoSide::RIGHT][j]))
-			{
-				DrawLine(m_ExtremePoints[VideoSide::DOWN][i], m_kHeight - 1 - m_kHeight % m_kRoundSideSize, m_kWidth - 1 - m_kWidth % m_kRoundSideSize, m_ExtremePoints[VideoSide::RIGHT][j], out);
-			}
-		}
-	}*/
-}
-
-void LinesFilter::FrameHandler::UpdateSquaresBrightness(const uint32_t* in)
-{
-	for (uint32_t i = 0; i < m_kSquaresWidthCount; i += 1)
-	{
-		std::fill(m_SquaresBrightness[i], m_SquaresBrightness[i]+m_kSquaresHeightCount, '\0');
-	}
-	uint32_t current_brightness = 0;
-	for (uint32_t w = 0; w < m_kWidth - m_kWidth% m_kRoundSideSize; w += 1)
-	{
-		for (uint32_t h = 0; h < m_kHeight - m_kHeight % m_kRoundSideSize; h += 1)
-		{
-			// Формула для нахождения средней яркости
-			current_brightness = static_cast<uint32_t>
-				 (0.2126 * static_cast<double>(*(reinterpret_cast<const uint8_t*>(in + w + h * m_kWidth) + 0))   //r
-				+ 0.7152 * static_cast<double>(*(reinterpret_cast<const uint8_t*>(in + w + h * m_kWidth) + 1))   //g
-				+ 0.0722 * static_cast<double>(*(reinterpret_cast<const uint8_t*>(in + w + h * m_kWidth) + 2))); //b
-			m_SquaresBrightness[w / m_kRoundSideSize][h / m_kRoundSideSize] += current_brightness;
-			m_max_line_brightness += current_brightness;
-		}
-
-	}
-
-	for (uint32_t w = 0; w < m_kSquaresWidthCount; w += 1)
-	{
-		for (uint32_t h = 0; h < m_kSquaresHeightCount; h += 1)
-		{
-			//привожу к среднему значению
-			m_SquaresBrightness[w][h] /= (m_kRoundSideSize * m_kRoundSideSize);
-		}
-	}
-
-	m_max_line_brightness /= (m_kHeight * m_kWidth) * 5;
-	//std::cout << m_max_line_brightness << '\n';
-}
-
-void LinesFilter::FrameHandler::GenerateExtremePoints()
-{
-	for (uint32_t i = 0; i < m_kSquaresWidthCount; i += 1)
-	{
-		m_ExtremePoints[VideoSide::UP]  [i] = rand() % (m_kRoundSideSize - 2) + 1 + i*m_kRoundSideSize;
-		m_ExtremePoints[VideoSide::DOWN][i] = rand() % (m_kRoundSideSize - 2) + 1 + i * m_kRoundSideSize;
-	}
-	for (uint32_t i = 0; i < m_kSquaresHeightCount; i += 1)
-	{
-		m_ExtremePoints[VideoSide::LEFT] [i] = rand() % (m_kRoundSideSize - 2) + 1 + i * m_kRoundSideSize;
-		m_ExtremePoints[VideoSide::RIGHT][i] = rand() % (m_kRoundSideSize - 2) + 1 + i * m_kRoundSideSize;
-	}
-}
-
-bool LinesFilter::FrameHandler::IsLineFitsBrightness(int32_t x0, int32_t y0, int32_t x1, int32_t y1) const
-{
-	/*
-	 * Выяснять какие значения яркости квадратных полей будут учитываться при вычислении
-	 * средней яркости пикселей, попавших под линию, будет алгоритм Брезенхема (не совсем, но идея взята оттуда).
-	 * https://en.wikipedia.org/wiki/Bresenham%27s_line_algorithm
-	 * Квадрат, по середине которого проходит линия, будет учитываться два раза, но это не баг - это фича!
-	 * 
-	 */
-
-
-	uint32_t avg_line_brightness = 0;
-	uint32_t square_counter = 0;
-
-	if (y1 / m_kRoundSideSize == y0 / m_kRoundSideSize)
-	{
-		uint32_t i = x0 / m_kRoundSideSize;
-		for (; i < x1 / m_kRoundSideSize; i += 1) avg_line_brightness += m_SquaresBrightness[i][y0/m_kRoundSideSize];
-		avg_line_brightness /= (i - x0 / m_kRoundSideSize);
-		return (avg_line_brightness <= m_max_line_brightness);
-	}
-	if (x1 / m_kRoundSideSize == x0 / m_kRoundSideSize)
-	{
-		uint32_t i = y0 / m_kRoundSideSize;
-		for (; i < y1 / m_kRoundSideSize; i += 1) avg_line_brightness += m_SquaresBrightness[x0 / m_kRoundSideSize][i];
-		avg_line_brightness /= (i - y0 / m_kRoundSideSize);
-		return (avg_line_brightness <= m_max_line_brightness);
-	}
-	if (y0 > y1)
-	{
-		int32_t tmp = x0;
-		x0 = x1;
-		x1 = tmp;
-		tmp = y0;
-		y0 = y1;
-		y1 = tmp;
-	}
-	
-	int32_t dx = abs(x1 - x0);
-	int32_t dy = y1 - y0;
-	bool zerkalim = (dy > dx);
-	if (zerkalim)
-	{
-		int32_t tmp = x0;
-		x0 = y0;
-		y0 = tmp;
-		tmp = x1;
-		x1 = y1;
-		y1 = tmp;
-	}
-	double tgA = double(y1 - y0) / double(x1 - x0);
-
-	int32_t direction_x = (x1 - x0 > 0 ? 1 : -1);
-
-
-	int32_t tmp = x0 / m_kRoundSideSize * m_kRoundSideSize + m_kRoundSideSize / 2;
-	if ((direction_x == 1) and (tmp < x0))
-	{
-		tmp += m_kRoundSideSize;
-	}
-	else if ((direction_x == -1) and (tmp > x0))
-	{
-		tmp -= m_kRoundSideSize;
-	}
-	y0 += (tmp - x0) * tgA;
-	x0 = tmp;
-	double error = 0;
-	int y = y0 / m_kRoundSideSize;
-
-	if (y1 / m_kRoundSideSize == y0 / m_kRoundSideSize)
-	{
-		uint32_t i = x0 / m_kRoundSideSize;
-		for (; i < x1 / m_kRoundSideSize; i += 1) avg_line_brightness += m_SquaresBrightness[i][y0 / m_kRoundSideSize];
-		avg_line_brightness /= (i - x0 / m_kRoundSideSize);
-		return (avg_line_brightness <= m_max_line_brightness);
-	}
-	if (x1 / m_kRoundSideSize == x0 / m_kRoundSideSize)
-	{
-		uint32_t i = y0 / m_kRoundSideSize;
-		for (; i < y1 / m_kRoundSideSize; i += 1) avg_line_brightness += m_SquaresBrightness[x0 / m_kRoundSideSize][i];
-		avg_line_brightness /= (i - y0 / m_kRoundSideSize);
-		return (avg_line_brightness <= m_max_line_brightness);
-	}
-
-	if (not zerkalim)
-	{
-		if (direction_x == 1)
-		{
-			for (int x = x0; x < x1; x += m_kRoundSideSize)
-			{
-				avg_line_brightness += m_SquaresBrightness[x / m_kRoundSideSize][y];
-				square_counter += 1;
-				error += tgA;
-				if (error >= 1.0)
+				if (abs(x0 - x1) + abs(y0 - y1) < 15)
 				{
-					y += 1;
-					error -= 1.0;
+					FindEdges(x0, y0, x1, y1);
+					DrawLine(x0, y0, x1, y1, 0.25, out, in);
 				}
 			}
+		}
+	}
+
+	std::uniform_real_distribution urd{ 0.,180. };
+	double random_angle;
+	double current_darkest_value;
+	Pos Darkest1, Darkest2;
+	Pos Tmp;
+
+	for (uint32_t i = 0; i < m_kNumOfLines; i += 1)
+	{
+		if (m_darkest_points.empty()) return;
+
+		current_darkest_value = DBL_MAX;
+		Darkest1 = { 0,0 };
+		Darkest2 = { 0,0 };
+
+		Tmp = m_darkest_points.back();
+		m_darkest_points.pop_back();
+
+		for (uint32_t j = 0; j < m_kSampleSize; j += 1)
+		{
+			random_angle = urd(rng);
+			x0 = Tmp.x;
+			y0 = Tmp.y;
+			x1 = x0 + (int)(200.0 * cos(random_angle * 3.14 / 180.));
+			y1 = y0 + (int)(200.0 * sin(random_angle * 3.14 / 180.));
+
+			if (m_kLongLineMode) FindEdges(x0, y0, x1, y1);
+			double lnbrh = GetLineValue(x0, y0, x1, y1, in);
+			if (lnbrh < current_darkest_value)
+			{
+				current_darkest_value = lnbrh;
+				Darkest1.x = x0;
+				Darkest1.y = y0;
+				Darkest2.x = x1;
+				Darkest2.y = y1;
+			}
+		}
+		DrawLine(Darkest1.x, Darkest1.y, Darkest2.x, Darkest2.y, 0.125, out, in);
+	}
+}
+
+void FrameHandler::FindEdges(int32_t& x0, int32_t& y0, int32_t& x1, int32_t& y1) const
+{
+	if ((x0 == x1) and (y0 == y1)) return;
+
+	if (x0 == x1)
+	{
+		y0 = 0;
+		y1 = m_kHeight - 1;
+		return;
+	}
+
+	if (y0 == y1)
+	{
+		x0 = 0;
+		x1 = m_kWidth - 1;
+		return;
+	}
+
+	bool flag = false;
+
+	double tgA = double(y1 - y0)/double(x1 - x0);
+
+	int32_t y2 = 0;
+	int32_t x2 = double(y2 - y0) / tgA + x0;
+	if ((x2 >= 0) and (x2 < m_kWidth))
+	{
+		x0 = x2;
+		y0 = y2;
+		flag = true;
+	}
+	y2 = m_kHeight - 1;
+	x2 = double(y2 - y0) / tgA + x0;
+	if ((x2 >= 0) and (x2 < m_kWidth))
+	{
+		if (flag)
+		{
+			x1 = x2;
+			y1 = y2;
+			return;
 		}
 		else
 		{
-			for (int x = x0; x > x1; x -= m_kRoundSideSize)
+			x0 = x2;
+			y0 = y2;
+			flag = true;
+		}
+	}
+	x2 = 0;
+	y2 = tgA * double(x2 - x0) + y0;
+	if ((y2 >= 0) and (y2 < m_kHeight))
+	{
+		if (flag)
+		{
+			x1 = x2;
+			y1 = y2;
+			return;
+		}
+		else
+		{
+			x0 = x2;
+			y0 = y2;
+			flag = true;
+		}
+	}
+	x2 = m_kWidth - 1;
+	y2 = tgA * double(x2 - x0) + y0;
+	if ((y2 >= 0) and (y2 < m_kHeight))
+	{
+		x1 = x2;
+		y1 = y2;
+		return;
+	}
+	std::cout << "ERROR: \n";
+	std::cout << x1 << ';' << y1 << ' ' << x0 << ';' << y0 << '\n';
+
+	std::cout << double((x1 - x0) * (-y0)) / double(y1 - y0) + x0 << '\n' 
+			  << double((x1 - x0) * ((int)m_kHeight - 1 - y0)) / double(y1 - y0) + x0 << '\n' 
+			  << double((y1 - y0) * (-x0)) / double(x1 - x0) + y0 << '\n' 
+			  << double((y1 - y0) * ((int)m_kWidth - 1 - x0)) / double(x1 - x0) + y0 << '\n';
+	std::cout << "AAAAAAAAAAA\n";
+	exit(-1);
+}
+
+uint32_t FrameHandler::GetPixelValue(int32_t x, int32_t y, const uint32_t* in) const
+{
+	return (*(reinterpret_cast<const uint8_t*>(in + x + y * m_kWidth) + 0)   //r
+		  + *(reinterpret_cast<const uint8_t*>(in + x + y * m_kWidth) + 1)   //g
+		  + *(reinterpret_cast<const uint8_t*>(in + x + y * m_kWidth) + 2)); //b
+}
+
+double FrameHandler::GetLineValue(int32_t x1, int32_t y1, int32_t x2, int32_t y2, const uint32_t* in) const
+{
+	/*
+	 * https://en.wikipedia.org/wiki/Bresenham%27s_line_algorithm
+	 */
+	uint32_t line_brightness = 0;
+	uint32_t counter = 0;
+
+	const int deltaX = abs(x2 - x1);
+	const int deltaY = abs(y2 - y1);
+	const int signX = x1 < x2 ? 1 : -1;
+	const int signY = y1 < y2 ? 1 : -1;
+	int error = deltaX - deltaY;
+	if ((x2 >= 0) and (y2 >= 0) and (x2 < m_kWidth) and (y2 < m_kHeight))
+	{
+		line_brightness += GetPixelValue(x2, y2, in);
+		counter += 1;
+	}
+	while (((x1 != x2) or (y1 != y2)) and (x1 >= 0) and (y1 >= 0) and (x1 < m_kWidth) and (y1 < m_kHeight))
+	{
+		line_brightness += GetPixelValue(x1, y1, in);
+		counter += 1;
+		int error2 = error * 2;
+		if (error2 > -deltaY)
+		{
+			error -= deltaY;
+			x1 += signX;
+		}
+		if (error2 < deltaX)
+		{
+			error += deltaX;
+			y1 += signY;
+		}
+	}
+	return static_cast<double>(line_brightness) / static_cast<double>(counter);
+}
+
+void FrameHandler::UpdatePoints(const uint32_t* in)
+{
+	m_darkest_points.clear();
+	for (int32_t w = 1; w < m_kWidth - 1; w += 1)
+	{
+		for (int32_t h = 1; h < m_kHeight - 1; h += 1)
+		{
+			if (GetPixelValue(w, h, in) <= 300)
 			{
-				avg_line_brightness += m_SquaresBrightness[x / m_kRoundSideSize][y];
-				square_counter += 1;
-				error += tgA;
-				if (error >= 1.0)
-				{
-					y += 1;
-					error -= 1.0;
-				}
+				m_darkest_points.push_back(Pos{ w,h });
 			}
 		}
+	}
+	std::shuffle(m_darkest_points.begin(), m_darkest_points.end(), rng);
+
+
+	if (m_kShouldDrawExtremePoints)
+	{
+		m_extreme_points.clear();
+		std::vector<Pos> tmp;
+		tmp.reserve(20);
+		for (int32_t j = 1; j < m_kHeight - 1; j += 1)
+		{
+			tmp.clear();
+			for (int32_t i = 1; i < m_kWidth - 1; i += 1)
+			{
+				if (GetPixelValue(i, j, in) < 300)
+				{
+					int result = 0;
+					if (GetPixelValue(i + 1, j, in) > 300) result += 1;
+					if (GetPixelValue(i - 1, j, in) > 300) result += 1;
+					if (GetPixelValue(i, j + 1, in) > 300) result += 1;
+					if (GetPixelValue(i, j - 1, in) > 300) result += 1;
+					if (result > 1) tmp.push_back(Pos{ i,j });
+				}
+			}
+			if (not tmp.empty()) m_extreme_points.push_back(tmp);
+		}
+	}
+}
+
+void FrameHandler::DrawPixel(int32_t x, int32_t y, float brightness, uint32_t* out, uint32_t* in) const
+{
+	if (y >= m_kHeight) return;
+	if (x >= m_kWidth) return;
+
+	uint8_t v = 16;
+	if (*(reinterpret_cast<uint8_t*>(in + x + m_kWidth * y) + 0) < 230)
+	{
+		*(reinterpret_cast<uint8_t*>(in + x + m_kWidth * y) + 0) += v;
+		*(reinterpret_cast<uint8_t*>(in + x + m_kWidth * y) + 1) += v;
+		*(reinterpret_cast<uint8_t*>(in + x + m_kWidth * y) + 2) += v;
 	}
 	else
 	{
-		if (direction_x == 1)
-		{
-			for (int x = x0; x < x1; x += m_kRoundSideSize)
-			{
-				avg_line_brightness += m_SquaresBrightness[y][x / m_kRoundSideSize];
-				square_counter += 1;
-				error += tgA;
-				if (error >= 1.0)
-				{
-					y += 1;
-					error -= 1.0;
-				}
-			}
-		}
-		else
-		{
-			for (int x = x0; x > x1; x -= m_kRoundSideSize)
-			{
-				avg_line_brightness += m_SquaresBrightness[y][x / m_kRoundSideSize];
-				square_counter += 1;
-				error += tgA;
-				if (error >= 1.0)
-				{
-					y += 1;
-					error -= 1.0;
-				}
-			}
-		}
+		*(reinterpret_cast<uint8_t*>(in + x + m_kWidth * y) + 0) = 255;
+		*(reinterpret_cast<uint8_t*>(in + x + m_kWidth * y) + 1) = 255;
+		*(reinterpret_cast<uint8_t*>(in + x + m_kWidth * y) + 2) = 255;
 	}
 
-	avg_line_brightness /= m_kSquaresHeightCount;
-	return (avg_line_brightness <= m_max_line_brightness);
+	v = 255 * brightness;
+	if (*(reinterpret_cast<uint8_t*>(out + x + m_kWidth * y) + 0) > v)
+	{
+		*(reinterpret_cast<uint8_t*>(out + x + m_kWidth * y) + 0) -= v;
+		*(reinterpret_cast<uint8_t*>(out + x + m_kWidth * y) + 1) -= v;
+		*(reinterpret_cast<uint8_t*>(out + x + m_kWidth * y) + 2) -= v;
+	}
+	else
+	{
+		*(reinterpret_cast<uint8_t*>(out + x + m_kWidth * y) + 0) = 0;
+		*(reinterpret_cast<uint8_t*>(out + x + m_kWidth * y) + 1) = 0;
+		*(reinterpret_cast<uint8_t*>(out + x + m_kWidth * y) + 2) = 0;
+	}
+	*(reinterpret_cast<uint8_t*>(out + x + m_kWidth * y) + 3) = 255;
 }
 
-void LinesFilter::FrameHandler::DrawLine(int32_t x0, int32_t y0, int32_t x1, int32_t y1, uint32_t* out, const uint32_t* in) const
+void FrameHandler::DrawLine(int32_t x0, int32_t y0, int32_t x1, int32_t y1 , float brightness, uint32_t* out, uint32_t* in) const
 {
 	 //https://en.wikipedia.org/wiki/Xiaolin_Wu%27s_line_algorithm
 
@@ -432,12 +409,12 @@ void LinesFilter::FrameHandler::DrawLine(int32_t x0, int32_t y0, int32_t x1, int
 		xpx11 = int(xend);
 		const int ypx11 = ipart(yend);
 		if (steep) {
-			plot(ypx11, xpx11, rfpart(yend) * xgap, out, in);
-			plot(ypx11 + 1, xpx11, fpart(yend) * xgap, out, in);
+			DrawPixel(ypx11, xpx11, rfpart(yend) * xgap *brightness, out, in);
+			DrawPixel(ypx11 + 1, xpx11, fpart(yend) * xgap * brightness, out, in);
 		}
 		else {
-			plot(xpx11, ypx11, rfpart(yend) * xgap, out, in);
-			plot(xpx11, ypx11 + 1, fpart(yend) * xgap, out, in);
+			DrawPixel(xpx11, ypx11, rfpart(yend) * xgap * brightness, out, in);
+			DrawPixel(xpx11, ypx11 + 1, fpart(yend) * xgap * brightness, out, in);
 		}
 		intery = yend + gradient;
 	}
@@ -450,43 +427,46 @@ void LinesFilter::FrameHandler::DrawLine(int32_t x0, int32_t y0, int32_t x1, int
 		xpx12 = int(xend);
 		const int ypx12 = ipart(yend);
 		if (steep) {
-			plot(ypx12, xpx12, rfpart(yend) * xgap, out, in);
-			plot(ypx12 + 1, xpx12, fpart(yend) * xgap, out, in);
+			DrawPixel(ypx12, xpx12, rfpart(yend) * xgap * brightness, out, in);
+			DrawPixel(ypx12 + 1, xpx12, fpart(yend) * xgap * brightness, out, in);
 		}
 		else {
-			plot(xpx12, ypx12, rfpart(yend) * xgap, out, in);
-			plot(xpx12, ypx12 + 1, fpart(yend) * xgap, out, in);
+			DrawPixel(xpx12, ypx12, rfpart(yend) * xgap * brightness, out, in);
+			DrawPixel(xpx12, ypx12 + 1, fpart(yend) * xgap * brightness, out, in);
 		}
 	}
 
 	if (steep) {
 		for (int x = xpx11 + 1; x < xpx12; x++) {
-			plot(ipart(intery), x, rfpart(intery), out, in);
-			plot(ipart(intery) + 1, x, fpart(intery), out, in);
+			DrawPixel(ipart(intery), x, rfpart(intery) * brightness, out, in);
+			DrawPixel(ipart(intery) + 1, x, fpart(intery) * brightness, out, in);
 			intery += gradient;
 		}
 	}
 	else {
 		for (int x = xpx11 + 1; x < xpx12; x++) {
-			plot(x, ipart(intery), rfpart(intery), out, in);
-			plot(x, ipart(intery) + 1, fpart(intery), out, in);
+			DrawPixel(x, ipart(intery), rfpart(intery) * brightness, out, in);
+			DrawPixel(x, ipart(intery) + 1, fpart(intery) * brightness, out, in);
 			intery += gradient;
 		}
 	}
 }
 
 
-void LinesFilter::FrameHandler::plot(int32_t x, int32_t y, float brightness, uint32_t* out, const uint32_t* in) const
-{
-	if (*(reinterpret_cast<const uint8_t*>(in + x + m_kWidth * y) + 0) > m_max_line_brightness) return;
-	*(reinterpret_cast<uint8_t*>(out + x + m_kWidth * y) + 0) *= (1. - brightness);
-	*(reinterpret_cast<uint8_t*>(out + x + m_kWidth * y) + 1) *= (1. - brightness);
-	*(reinterpret_cast<uint8_t*>(out + x + m_kWidth * y) + 2) *= (1. - brightness);
-	*(reinterpret_cast<uint8_t*>(out + x + m_kWidth * y) + 3) = 255;
-}
-
 frei0r::construct<LinesFilter> plugin("Straight lines",
-	"kwa kwa",
+	"Each frame is drawn only with random straight lines",
 	"rautyrauty",
 	3, 0,
 	F0R_COLOR_MODEL_RGBA8888);
+
+//int main()
+//{
+//	FrameHandler fh(200, 100, 15,15);
+//	uint32_t out[200*100];
+//	uint32_t in[200 * 100];
+//	std::fill(in, in + 200 * 100, '\0');
+//
+//	fh.FrameProcessing(out, in);
+//
+//	return 0;
+//}

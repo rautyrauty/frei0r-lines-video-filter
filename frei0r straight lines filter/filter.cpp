@@ -1,4 +1,4 @@
-﻿//ffmpeg -loglevel debug -i videoplayback.mp4 -vf "frei0r=straightlines:2000|10" -t 30 lovebff.mp4
+﻿//ffmpeg -loglevel debug -i videoplayback.mp4 -vf "frei0r=straightlines:2000|10|n|y" -t 30 lovebff.mp4
 
 #include <frei0r.hpp>
 #include <iostream>
@@ -18,18 +18,18 @@ class FrameHandler
 public:
 	FrameHandler(const uint32_t width, const uint32_t height, const double num_of_lines, const double sample_size, const bool should_draw_extreme_lines, const bool long_line_mode);
 
-	void FrameProcessing(uint32_t* out, uint32_t* in);
+	void FrameProcessing(uint32_t* out, const uint32_t* in);
 
 private:
 	void FindEdges(int32_t& x0, int32_t& y0, int32_t& x1, int32_t& y1) const;
 
 	uint32_t GetPixelValue(int32_t x, int32_t y, const uint32_t* in) const;
-	double GetLineValue(int32_t x0, int32_t y0, int32_t x1, int32_t y1,const uint32_t* in) const;
+	double GetLineValue(int32_t x0, int32_t y0, int32_t x1, int32_t y1,const uint32_t* in, const uint32_t* out) const;
 
 	void UpdatePoints(const uint32_t* in);
 
-	void DrawPixel(int32_t x, int32_t y, float brightess, uint32_t* out, uint32_t* in) const;
-	void DrawLine(int32_t x0, int32_t y0, int32_t x1, int32_t y1, float brightness, uint32_t* out, uint32_t* in) const;
+	void DrawPixel(int32_t x, int32_t y, float brightess, uint32_t* out) const;
+	void DrawLine(int32_t x0, int32_t y0, int32_t x1, int32_t y1, float brightness, uint32_t* out) const;
 
 	const uint32_t m_kNumOfLines;
 	const uint32_t m_kSampleSize;
@@ -93,10 +93,7 @@ void LinesFilter::update(double, uint32_t* out, const uint32_t* in)
 
 	std::fill(out, out + size, static_cast<char>(255)); // делаем кадр белым
 
-	uint32_t* in_copy = new uint32_t[size];
-	std::copy_n(in, size, in_copy);
-
-	m_frame_handler->FrameProcessing(out, in_copy);
+	m_frame_handler->FrameProcessing(out, in);
 }
 
 FrameHandler::FrameHandler(const uint32_t width, const uint32_t height, const double num_of_lines, const double sample_size, const bool should_draw_extreme_lines, const bool long_line_mode) :
@@ -110,7 +107,7 @@ FrameHandler::FrameHandler(const uint32_t width, const uint32_t height, const do
 {
 	m_darkest_points.reserve(m_kWidth * m_kHeight);
 } 
-void FrameHandler::FrameProcessing(uint32_t* out, uint32_t* in)
+void FrameHandler::FrameProcessing(uint32_t* out, const uint32_t* in)
 {
 	UpdatePoints(in);
 
@@ -128,7 +125,7 @@ void FrameHandler::FrameProcessing(uint32_t* out, uint32_t* in)
 				if (abs(x0 - x1) + abs(y0 - y1) < 15)
 				{
 					FindEdges(x0, y0, x1, y1);
-					DrawLine(x0, y0, x1, y1, 0.25, out, in);
+					DrawLine(x0, y0, x1, y1, 0.25, out);
 				}
 			}
 		}
@@ -160,7 +157,7 @@ void FrameHandler::FrameProcessing(uint32_t* out, uint32_t* in)
 			y1 = y0 + (int)(200.0 * sin(random_angle * 3.14 / 180.));
 
 			if (m_kLongLineMode) FindEdges(x0, y0, x1, y1);
-			double lnbrh = GetLineValue(x0, y0, x1, y1, in);
+			double lnbrh = GetLineValue(x0, y0, x1, y1, in,out);
 			if (lnbrh < current_darkest_value)
 			{
 				current_darkest_value = lnbrh;
@@ -170,7 +167,7 @@ void FrameHandler::FrameProcessing(uint32_t* out, uint32_t* in)
 				Darkest2.y = y1;
 			}
 		}
-		DrawLine(Darkest1.x, Darkest1.y, Darkest2.x, Darkest2.y, 0.125, out, in);
+		DrawLine(Darkest1.x, Darkest1.y, Darkest2.x, Darkest2.y, 0.125, out);
 	}
 }
 
@@ -246,7 +243,7 @@ void FrameHandler::FindEdges(int32_t& x0, int32_t& y0, int32_t& x1, int32_t& y1)
 		y1 = y2;
 		return;
 	}
-	std::cout << "ERROR: \n";
+	/*std::cout << "ERROR: \n";
 	std::cout << x1 << ';' << y1 << ' ' << x0 << ';' << y0 << '\n';
 
 	std::cout << double((x1 - x0) * (-y0)) / double(y1 - y0) + x0 << '\n' 
@@ -254,7 +251,7 @@ void FrameHandler::FindEdges(int32_t& x0, int32_t& y0, int32_t& x1, int32_t& y1)
 			  << double((y1 - y0) * (-x0)) / double(x1 - x0) + y0 << '\n' 
 			  << double((y1 - y0) * ((int)m_kWidth - 1 - x0)) / double(x1 - x0) + y0 << '\n';
 	std::cout << "AAAAAAAAAAA\n";
-	exit(-1);
+	exit(-1);*/
 }
 
 uint32_t FrameHandler::GetPixelValue(int32_t x, int32_t y, const uint32_t* in) const
@@ -264,12 +261,12 @@ uint32_t FrameHandler::GetPixelValue(int32_t x, int32_t y, const uint32_t* in) c
 		  + *(reinterpret_cast<const uint8_t*>(in + x + y * m_kWidth) + 2)); //b
 }
 
-double FrameHandler::GetLineValue(int32_t x1, int32_t y1, int32_t x2, int32_t y2, const uint32_t* in) const
+double FrameHandler::GetLineValue(int32_t x1, int32_t y1, int32_t x2, int32_t y2, const uint32_t* in, const uint32_t* out) const
 {
 	/*
 	 * https://en.wikipedia.org/wiki/Bresenham%27s_line_algorithm
 	 */
-	uint32_t line_brightness = 0;
+	int32_t line_brightness = 0;
 	uint32_t counter = 0;
 
 	const int deltaX = abs(x2 - x1);
@@ -280,11 +277,13 @@ double FrameHandler::GetLineValue(int32_t x1, int32_t y1, int32_t x2, int32_t y2
 	if ((x2 >= 0) and (y2 >= 0) and (x2 < m_kWidth) and (y2 < m_kHeight))
 	{
 		line_brightness += GetPixelValue(x2, y2, in);
+		line_brightness -= GetPixelValue(x2, y2, out);
 		counter += 1;
 	}
 	while (((x1 != x2) or (y1 != y2)) and (x1 >= 0) and (y1 >= 0) and (x1 < m_kWidth) and (y1 < m_kHeight))
 	{
 		line_brightness += GetPixelValue(x1, y1, in);
+		line_brightness -= GetPixelValue(x1, y1, out);
 		counter += 1;
 		int error2 = error * 2;
 		if (error2 > -deltaY)
@@ -342,26 +341,12 @@ void FrameHandler::UpdatePoints(const uint32_t* in)
 	}
 }
 
-void FrameHandler::DrawPixel(int32_t x, int32_t y, float brightness, uint32_t* out, uint32_t* in) const
+void FrameHandler::DrawPixel(int32_t x, int32_t y, float brightness, uint32_t* out) const
 {
 	if (y >= m_kHeight) return;
 	if (x >= m_kWidth) return;
 
-	uint8_t v = 16;
-	if (*(reinterpret_cast<uint8_t*>(in + x + m_kWidth * y) + 0) < 230)
-	{
-		*(reinterpret_cast<uint8_t*>(in + x + m_kWidth * y) + 0) += v;
-		*(reinterpret_cast<uint8_t*>(in + x + m_kWidth * y) + 1) += v;
-		*(reinterpret_cast<uint8_t*>(in + x + m_kWidth * y) + 2) += v;
-	}
-	else
-	{
-		*(reinterpret_cast<uint8_t*>(in + x + m_kWidth * y) + 0) = 255;
-		*(reinterpret_cast<uint8_t*>(in + x + m_kWidth * y) + 1) = 255;
-		*(reinterpret_cast<uint8_t*>(in + x + m_kWidth * y) + 2) = 255;
-	}
-
-	v = 255 * brightness;
+	uint8_t v = 255 * brightness;
 	if (*(reinterpret_cast<uint8_t*>(out + x + m_kWidth * y) + 0) > v)
 	{
 		*(reinterpret_cast<uint8_t*>(out + x + m_kWidth * y) + 0) -= v;
@@ -377,7 +362,7 @@ void FrameHandler::DrawPixel(int32_t x, int32_t y, float brightness, uint32_t* o
 	*(reinterpret_cast<uint8_t*>(out + x + m_kWidth * y) + 3) = 255;
 }
 
-void FrameHandler::DrawLine(int32_t x0, int32_t y0, int32_t x1, int32_t y1 , float brightness, uint32_t* out, uint32_t* in) const
+void FrameHandler::DrawLine(int32_t x0, int32_t y0, int32_t x1, int32_t y1 , float brightness, uint32_t* out) const
 {
 	 //https://en.wikipedia.org/wiki/Xiaolin_Wu%27s_line_algorithm
 
@@ -409,12 +394,12 @@ void FrameHandler::DrawLine(int32_t x0, int32_t y0, int32_t x1, int32_t y1 , flo
 		xpx11 = int(xend);
 		const int ypx11 = ipart(yend);
 		if (steep) {
-			DrawPixel(ypx11, xpx11, rfpart(yend) * xgap *brightness, out, in);
-			DrawPixel(ypx11 + 1, xpx11, fpart(yend) * xgap * brightness, out, in);
+			DrawPixel(ypx11, xpx11, rfpart(yend) * xgap *brightness, out);
+			DrawPixel(ypx11 + 1, xpx11, fpart(yend) * xgap * brightness, out);
 		}
 		else {
-			DrawPixel(xpx11, ypx11, rfpart(yend) * xgap * brightness, out, in);
-			DrawPixel(xpx11, ypx11 + 1, fpart(yend) * xgap * brightness, out, in);
+			DrawPixel(xpx11, ypx11, rfpart(yend) * xgap * brightness, out);
+			DrawPixel(xpx11, ypx11 + 1, fpart(yend) * xgap * brightness, out);
 		}
 		intery = yend + gradient;
 	}
@@ -427,26 +412,26 @@ void FrameHandler::DrawLine(int32_t x0, int32_t y0, int32_t x1, int32_t y1 , flo
 		xpx12 = int(xend);
 		const int ypx12 = ipart(yend);
 		if (steep) {
-			DrawPixel(ypx12, xpx12, rfpart(yend) * xgap * brightness, out, in);
-			DrawPixel(ypx12 + 1, xpx12, fpart(yend) * xgap * brightness, out, in);
+			DrawPixel(ypx12, xpx12, rfpart(yend) * xgap * brightness, out);
+			DrawPixel(ypx12 + 1, xpx12, fpart(yend) * xgap * brightness, out);
 		}
 		else {
-			DrawPixel(xpx12, ypx12, rfpart(yend) * xgap * brightness, out, in);
-			DrawPixel(xpx12, ypx12 + 1, fpart(yend) * xgap * brightness, out, in);
+			DrawPixel(xpx12, ypx12, rfpart(yend) * xgap * brightness, out);
+			DrawPixel(xpx12, ypx12 + 1, fpart(yend) * xgap * brightness, out);
 		}
 	}
 
 	if (steep) {
 		for (int x = xpx11 + 1; x < xpx12; x++) {
-			DrawPixel(ipart(intery), x, rfpart(intery) * brightness, out, in);
-			DrawPixel(ipart(intery) + 1, x, fpart(intery) * brightness, out, in);
+			DrawPixel(ipart(intery), x, rfpart(intery) * brightness, out);
+			DrawPixel(ipart(intery) + 1, x, fpart(intery) * brightness, out);
 			intery += gradient;
 		}
 	}
 	else {
 		for (int x = xpx11 + 1; x < xpx12; x++) {
-			DrawPixel(x, ipart(intery), rfpart(intery) * brightness, out, in);
-			DrawPixel(x, ipart(intery) + 1, fpart(intery) * brightness, out, in);
+			DrawPixel(x, ipart(intery), rfpart(intery) * brightness, out);
+			DrawPixel(x, ipart(intery) + 1, fpart(intery) * brightness, out);
 			intery += gradient;
 		}
 	}

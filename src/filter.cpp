@@ -47,7 +47,8 @@ private:
 	std::vector<std::vector<Pos>> m_extreme_points;
 };
 
-// Этот класс отвечает за параметры, вводимые пользователем, и функцию update 
+// The main class in frei0r. It is responsible for user settings and
+// the update function, which takes the initial frame and outputs the result
 class LinesFilter : public frei0r::filter
 {
 public:
@@ -57,8 +58,7 @@ public:
 private:
 	std::unique_ptr<FrameHandler> m_frame_handler;
 
-	//параметры:
-
+	// User settings:
 	double m_num_of_lines;
 	double m_sample_size;
 	bool m_should_draw_extreme_lines;
@@ -83,13 +83,13 @@ LinesFilter::LinesFilter(unsigned int, unsigned int) :
 void LinesFilter::update(double, uint32_t* out, const uint32_t* in)
 {
 	/*
-	 * Спросите почему я не инициализировал m_frame_handler в конструкторе ?
-	 * Ответ: только здесь мы узнаем значения параметров.
-	 * Это одна из главных причин почему этот класс впринципе существует
+	 * Why didn't I initialize m_frame_handler in the constructor?
+	 * Only in this function do we get the parameter values.
+	 * This is one of the main reasons why this class exists at all.
 	 */
 	if (not m_frame_handler) m_frame_handler = std::make_unique<FrameHandler>(width, height, m_num_of_lines, m_sample_size, m_should_draw_extreme_lines, m_long_line_mode);
 
-	std::fill(out, out + size, static_cast<char>(255)); // делаем кадр белым
+	std::fill(out, out + size, static_cast<char>(255)); // making the output frame white
 
 	m_frame_handler->FrameProcessing(out, in);
 }

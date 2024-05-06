@@ -6,6 +6,8 @@
 #include <vector>
 #include <chrono>
 #include <random>
+#include <memory>
+#include <cfloat>
 
 struct Pos
 {
@@ -127,7 +129,7 @@ void FrameHandler::FrameProcessing(uint32_t* out, const uint32_t* in)
 		}
 	}
 
-	std::uniform_real_distribution urd{ 0.,180. };
+	std::uniform_real_distribution<double> urd{ 0.0, 180.0 };
 	double random_angle;
 	double current_darkest_value;
 	Pos Darkest1, Darkest2;

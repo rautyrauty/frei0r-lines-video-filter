@@ -1,4 +1,4 @@
-﻿//ffmpeg -loglevel debug -i videoplayback.mp4 -vf "frei0r=straightlines:2000|10|n|y" -t 30 lovebff.mp4
+﻿// ffmpeg -loglevel debug -i videoplayback.mp4 -vf "frei0r=straightlines:2000|10|n|y" -t 30 lovebff.mp4
 
 #include <frei0r.hpp>
 #include <iostream>
@@ -7,7 +7,7 @@
 #include <chrono>
 #include <random>
 
-struct Pos 
+struct Pos
 {
 	int32_t x;
 	int32_t y;
@@ -53,6 +53,7 @@ public:
 	void update(double time, uint32_t* out, const uint32_t* in) override;
 
 private:
+	std::unique_ptr<FrameHandler> m_frame_handler;
 
 	//параметры:
 
@@ -60,8 +61,6 @@ private:
 	double m_sample_size;
 	bool m_should_draw_extreme_lines;
 	bool m_long_line_mode;
-	
-	std::unique_ptr<FrameHandler> m_frame_handler;
 };
 
 LinesFilter::LinesFilter(unsigned int, unsigned int) :
@@ -103,7 +102,7 @@ FrameHandler::FrameHandler(const uint32_t width, const uint32_t height, const do
 	rng(std::chrono::steady_clock::now().time_since_epoch().count())
 {
 	m_darkest_points.reserve(m_kWidth * m_kHeight);
-} 
+}
 void FrameHandler::FrameProcessing(uint32_t* out, const uint32_t* in)
 {
 	UpdatePoints(in);
@@ -352,7 +351,7 @@ void FrameHandler::DrawPixel(int32_t x, int32_t y, float brightness, uint32_t* o
 
 void FrameHandler::DrawLine(int32_t x0, int32_t y0, int32_t x1, int32_t y1 , float brightness, uint32_t* out) const
 {
-	 //https://en.wikipedia.org/wiki/Xiaolin_Wu%27s_line_algorithm
+	 // https://en.wikipedia.org/wiki/Xiaolin_Wu%27s_line_algorithm
 
 	auto ipart = [](float x) -> int {return int(std::floor(x)); };
 	auto round = [](float x) -> float {return std::round(x); };

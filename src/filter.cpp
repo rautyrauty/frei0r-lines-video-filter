@@ -50,8 +50,6 @@ class LinesFilter : public frei0r::filter
 {
 public:
 	LinesFilter(unsigned int, unsigned int);
-
-	// Главная ф-ция отвечающая за обработку кадров 
 	void update(double time, uint32_t* out, const uint32_t* in) override;
 
 private:
@@ -68,7 +66,6 @@ private:
 
 LinesFilter::LinesFilter(unsigned int, unsigned int) :
 	m_frame_handler(nullptr),
-	//Значения по умолчанию:
 	m_num_of_lines(1000),
 	m_sample_size(10),
 	m_should_draw_extreme_lines(false),
@@ -243,15 +240,6 @@ void FrameHandler::FindEdges(int32_t& x0, int32_t& y0, int32_t& x1, int32_t& y1)
 		y1 = y2;
 		return;
 	}
-	/*std::cout << "ERROR: \n";
-	std::cout << x1 << ';' << y1 << ' ' << x0 << ';' << y0 << '\n';
-
-	std::cout << double((x1 - x0) * (-y0)) / double(y1 - y0) + x0 << '\n' 
-			  << double((x1 - x0) * ((int)m_kHeight - 1 - y0)) / double(y1 - y0) + x0 << '\n' 
-			  << double((y1 - y0) * (-x0)) / double(x1 - x0) + y0 << '\n' 
-			  << double((y1 - y0) * ((int)m_kWidth - 1 - x0)) / double(x1 - x0) + y0 << '\n';
-	std::cout << "AAAAAAAAAAA\n";
-	exit(-1);*/
 }
 
 uint32_t FrameHandler::GetPixelValue(int32_t x, int32_t y, const uint32_t* in) const
@@ -443,15 +431,3 @@ frei0r::construct<LinesFilter> plugin("Straight lines",
 	"rautyrauty",
 	3, 0,
 	F0R_COLOR_MODEL_RGBA8888);
-
-//int main()
-//{
-//	FrameHandler fh(200, 100, 15,15);
-//	uint32_t out[200*100];
-//	uint32_t in[200 * 100];
-//	std::fill(in, in + 200 * 100, '\0');
-//
-//	fh.FrameProcessing(out, in);
-//
-//	return 0;
-//}

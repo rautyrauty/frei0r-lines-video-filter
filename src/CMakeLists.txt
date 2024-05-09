@@ -1,6 +1,8 @@
 set (TARGET "frei0r-lines-video-filter")
 set (SOURCES
         filter.cpp
+        FrameHandler.cpp
+        FrameHandler.h
 )
 
 if (MSVC)

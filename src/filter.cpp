@@ -1,6 +1,4 @@
-﻿// ffmpeg -loglevel debug -i videoplayback.mp4 -vf "frei0r=straightlines:2000|10|n|y" -t 30 lovebff.mp4
-
-#include <frei0r.hpp>
+﻿#include <frei0r.hpp>
 #include "FrameHandler.h"
 
 // The main class in frei0r. It is responsible for user settings and

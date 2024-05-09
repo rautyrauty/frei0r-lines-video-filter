@@ -4,7 +4,7 @@
 #include "FrameHandler.h"
 
 // The main class in frei0r. It is responsible for user settings and
-// the update function, which takes the initial frame and outputs the result
+// the update function, which takes the initial frame and outputs the result.
 class LinesFilter : public frei0r::filter
 {
 public:

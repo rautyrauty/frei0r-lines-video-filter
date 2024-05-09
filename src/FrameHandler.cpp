@@ -159,9 +159,8 @@ uint32_t FrameHandler::GetPixelValue(int32_t x, int32_t y, const uint32_t* in) c
 
 double FrameHandler::GetLineValue(int32_t x1, int32_t y1, int32_t x2, int32_t y2, const uint32_t* in, const uint32_t* out) const
 {
-	/*
-	 * https://en.wikipedia.org/wiki/Bresenham%27s_line_algorithm
-	 */
+	// https://en.wikipedia.org/wiki/Bresenham%27s_line_algorithm
+
 	int32_t line_brightness = 0;
 	uint32_t counter = 0;
 
@@ -260,7 +259,7 @@ void FrameHandler::DrawPixel(int32_t x, int32_t y, float brightness, uint32_t* o
 
 void FrameHandler::DrawLine(int32_t x0, int32_t y0, int32_t x1, int32_t y1 , float brightness, uint32_t* out) const
 {
-	 // https://en.wikipedia.org/wiki/Xiaolin_Wu%27s_line_algorithm
+	// https://en.wikipedia.org/wiki/Xiaolin_Wu%27s_line_algorithm
 
 	auto ipart = [](float x) -> int {return int(std::floor(x)); };
 	auto round = [](float x) -> float {return std::round(x); };
